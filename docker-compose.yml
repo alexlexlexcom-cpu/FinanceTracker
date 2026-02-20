@@ -1,0 +1,26 @@
+services:
+  # 1. Сервис базы данных 
+  db:
+    image: postgres:15-alpine
+    container_name: finance_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: finance_db
+    ports:
+      - "5432:5432"
+
+  # 2. Твое FastAPI приложение 
+  app:
+    build: .
+    container_name: finance_app
+    restart: always 
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/finance_db
+    command: >
+      sh -c "sleep 5 && uvicorn app.main:app --host 0.0.0.0 --port 8000"

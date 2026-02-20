@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Finance Tracker Ultimate</title>
+    <!-- Библиотека для графиков -->
+    <script src="https://cdn.jsdelivr.net"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: #333;
+        }
+        @keyframes gradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        h1 { color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); margin: mt-30px; }
+        section, .card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 25px;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            margin-bottom: 20px;
+            box-sizing: border-box;
+        }
+        input, select {
+            width: 100%; padding: 12px; margin: 8px 0;
+            border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box;
+        }
+        button {
+            width: 100%; padding: 10px; border: none; border-radius: 8px;
+            font-weight: bold; text-transform: uppercase; cursor: pointer;
+            transition: transform 0.2s; margin-top: 5px;
+            background: #007bff; color: white;
+        }
+        button:hover { transform: translateY(-2px); opacity: 0.9; }
+        .hidden { display: none; }
+        ul { list-style: none; padding: 0; }
+        li {
+            background: #fff; margin: 8px 0; padding: 12px;
+            border-radius: 8px; display: flex; justify-content: space-between;
+            align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .del-btn {
+            width: 25px; height: 25px; padding: 0; background: #ff4757;
+            font-size: 0.8rem; line-height: 1; margin-left: 10px;
+        }
+        .filter-btn { font-size: 0.65rem; width: auto; flex: 1; margin: 0 2px; }
+        #search-input { background: rgba(255, 255, 255, 0.6); border: 1px solid #aaa; }
+    </style>
+</head>
+<body>
+
+    <h1>💰 Finance Tracker</h1>
+
+    <!-- Блок авторизации -->
+    <section id="auth-section">
+        <h3>Вход / Регистрация</h3>
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="auth('register')" style="background: #28a745;">Регистрация</button>
+        <button onclick="auth('token')">Войти</button>
+    </section>
+
+    <!-- Основное приложение -->
+    <section id="main-section" class="hidden">
+        <button onclick="logout()" style="background: #dc3545; width: auto; float: right; padding: 5px 10px; font-size: 0.7rem;">Выйти</button>
+        
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h2 style="margin: 0;">Ваш баланс</h2>
+            <div id="total-balance" style="font-size: 2.2rem; font-weight: bold; color: #28a745;">0 ₽</div>
+        </div>
+
+        <!-- График -->
+        <div style="max-height: 250px; margin-bottom: 20px; display: flex; justify-content: center;">
+            <canvas id="financeChart"></canvas>
+        </div>
+
+        <h3>Новая запись</h3>
+        <input type="number" id="amount" placeholder="Сумма">
+        <input type="text" id="category" placeholder="Категория (Еда, Жилье...)">
+        <select id="type">
+            <option value="expense">Расход</option>
+            <option value="income">Доход</option>
+        </select>
+        <button onclick="addTransaction()" style="background: #6f42c1;">Добавить</button>
+
+        <hr style="margin: 20px 0; border: 0.5px solid #eee;">
+
+        <h3>История и Поиск</h3>
+        <!-- Поиск -->
+        <input type="text" id="search-input" placeholder="🔍 Поиск по названию или сумме..." oninput="handleSearch()">
+        
+        <!-- Фильтры -->
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+            <button class="filter-btn" onclick="filterList('all')" style="background:#6c757d">Все</button>
+            <button class="filter-btn" onclick="filterList('income')" style="background:#28a745">Доходы</button>
+            <button class="filter-btn" onclick="filterList('expense')" style="background:#dc3545">Расходы</button>
+        </div>
+
+        <ul id="transactions-list"></ul>
+    </section>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:8000';
+        let token = localStorage.getItem('token');
+        let allTransactions = [];
+        let myChart = null;
+
+        if (token) showMain();
+
+        async function auth(path) {
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            let body, headers = {};
+
+            if (path === 'token') {
+                body = new URLSearchParams({ 'username': u, 'password': p });
+                headers['Content-Type'] = 'application/x-www-form-urlencoded';
+            } else {
+                body = JSON.stringify({ username: u, password: p });
+                headers['Content-Type'] = 'application/json';
+            }
+
+            const res = await fetch(`${API_URL}/${path === 'register' ? 'users/' : 'token'}`, {
+                method: 'POST', headers: headers, body: body
+            });
+
+            const data = await res.json();
+            if (res.ok && data.access_token) {
+                token = data.access_token;
+                localStorage.setItem('token', token);
+                showMain();
+            } else if (res.ok && path === 'register') {
+                alert('Успешно! Теперь войдите.');
+            } else {
+                alert("Ошибка: " + (data.detail || "Действие не удалось"));
+            }
+        }
+
+        async function loadData() {
+            if (!token) return;
+            const resTx = await fetch(`${API_URL}/transactions/`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (resTx.ok) {
+                allTransactions = await resTx.json();
+                renderUI(allTransactions);
+                updateChart(allTransactions);
+            }
+            const resBal = await fetch(`${API_URL}/balance/`, { headers: { 'Authorization': `Bearer ${token}` } });
+            if (resBal.ok) {
+                const data = await resBal.json();
+                const el = document.getElementById('total-balance');
+                el.innerText = `${data.balance} ₽`;
+                el.style.color = data.balance >= 0 ? '#28a745' : '#dc3545';
+            }
+        }
+
+        function renderUI(data) {
+            const list = document.getElementById('transactions-list');
+            list.innerHTML = data.map(t => `
+                <li>
+                    <span><b>${t.amount} ₽</b> — ${t.category}</span>
+                    <div style="display: flex; align-items: center;">
+                        <small style="color:${t.type==='income'?'green':'red'}; margin-right:10px">${t.type}</small>
+                        <button class="del-btn" onclick="deleteTransaction(${t.id})">×</button>
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        function handleSearch() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const filtered = allTransactions.filter(t => 
+                t.category.toLowerCase().includes(query) || t.amount.toString().includes(query)
+            );
+            renderUI(filtered);
+        }
+
+        function filterList(type) {
+            if (type === 'all') renderUI(allTransactions);
+            else renderUI(allTransactions.filter(t => t.type === type));
+        }
+
+        async function addTransaction() {
+            const amt = document.getElementById('amount');
+            const cat = document.getElementById('category');
+            const res = await fetch(`${API_URL}/transactions/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ amount: parseFloat(amt.value), category: cat.value, type: document.getElementById('type').value, description: "web" })
+            });
+            if (res.ok) {
+                amt.value = ''; cat.value = '';
+                loadData();
+            }
+        }
+
+        async function deleteTransaction(id) {
+            if (!confirm("Удалить?")) return;
+            const res = await fetch(`${API_URL}/transactions/${id}`, {
+                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) loadData();
+        }
+
+        function updateChart(data) {
+            if (typeof Chart === 'undefined') return;
+            const ctx = document.getElementById('financeChart').getContext('2d');
+            const expenses = data.filter(t => t.type === 'expense');
+            const cats = {};
+            expenses.forEach(t => cats[t.category] = (cats[t.category] || 0) + t.amount);
+            if (myChart) myChart.destroy();
+            if (Object.keys(cats).length === 0) return;
+            myChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(cats),
+                    datasets: [{
+                        data: Object.values(cats),
+                        backgroundColor: ['#ff6384', '#36a2eb', '#ffcd56', '#4bc0c0', '#9966ff', '#ff9f40']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+        }
+
+        function showMain() {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('main-section').classList.remove('hidden');
+            loadData();
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            location.reload();
+        }
+    </script>
+</body>
+</html>
